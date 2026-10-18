@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e0f13">
+<title>照片精选 · 滑动挑选</title>
+<style>
+  :root{
+    --bg:#0e0f13;
+    --card-bg:#1b1d25;
+    --line:rgba(255,255,255,.08);
+    --keep:#34d399;
+    --discard:#f87171;
+    --accent:#ff4d6d;
+    --cw:min(86vw, 380px);
+    --ch:min(62vh, 520px);
+    --th:80px;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; }
+  body{
+    margin:0; background:var(--bg); color:#fff; overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    overscroll-behavior:none;
+  }
+  img{ -webkit-user-drag:none; user-select:none; }
+
+  .screen{ position:fixed; inset:0; display:none; flex-direction:column; }
+  .screen.active{ display:flex; }
+
+  /* ---------- 设置页 ---------- */
+  #screen-setup{ overflow:hidden; }
+  .wrap{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
+         max-width:560px; width:100%; margin:0 auto;
+         padding:34px 20px calc(28px + env(safe-area-inset-bottom)); }
+  .hero{ text-align:center; margin-bottom:24px; }
+  .hero h1{ margin:0 0 8px; font-size:28px; letter-spacing:1px;
+            background:linear-gradient(135deg,#fff,#ffb3c1);
+            -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .hero .sub{ margin:0; color:#8a90a2; font-size:13px; }
+
+  .drop{
+    display:block; border:2px dashed rgba(255,255,255,.14); border-radius:20px;
+    padding:32px 20px; text-align:center; cursor:pointer;
+    background:rgba(255,255,255,.02); transition:.22s;
+  }
+  .drop.over{ border-color:var(--accent); background:rgba(255,77,109,.09); transform:scale(1.01); }
+  .drop .plus{ font-size:36px; line-height:1; color:#5b6072; margin-bottom:10px; }
+  .drop-title{ font-size:16px; font-weight:600; }
+  .drop-hint{ font-size:12px; color:#666c80; margin-top:6px; }
+
+  .thumbs{
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr));
+    gap:8px; margin:16px 0 4px;
+  }
+  .thumbs:empty{ display:none; }
+  .thumb{
+    position:relative; aspect-ratio:1; border-radius:12px; overflow:hidden;
+    background:#1b1d25 center/cover no-repeat;
+    border:1px solid var(--line);
+  }
+  .thumb-x{
+    position:absolute; top:3px; right:3px; width:21px; height:21px; padding:0;
+    border:none; border-radius:50%; background:rgba(0,0,0,.62); color:#fff;
+    font-size:14px; line-height:21px; cursor:pointer;
+  }
+
+  .count-card{
+    background:#15171e; border:1px solid var(--line); border-radius:18px;
+    padding:18px 20px; margin:20px 0;
+  }
+  .count-label{ font-size:14px; color:#9aa0b4; }
+  .count-ctrl{ display:flex; align-items:center; gap:10px; margin-top:12px; }
+  .step{
+    width:42px; height:42px; flex:none; border:none; border-radius:13px;
+    background:#232632; color:#fff; font-size:20px; cursor:pointer; transition:.15s;
+  }
+  .step:active{ transform:scale(.92); background:#2c3040; }
+  #targetInput{
+    width:88px; height:46px; text-align:center; font-size:23px; font-weight:700;
+    background:#0b0c10; color:#fff; border:1px solid rgba(255,255,255,.14);
+    border-radius:13px; outline:none; -moz-appearance:textfield;
+  }
+  #targetInput:focus{ border-color:var(--accent); }
+  #targetInput::-webkit-outer-spin-button,
+  #targetInput::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+  .unit{ color:#9aa0b4; font-size:15px; }
+  .count-note{ margin-top:12px; font-size:12px; color:#666c80; }
+
+  .primary{
+    width:100%; padding:17px; border:none; border-radius:16px;
+    background:linear-gradient(135deg,#ff4d6d,#ff7b54); color:#fff;
+    font-size:17px; font-weight:700; cursor:pointer; transition:.18s;
+    box-shadow:0 10px 26px -8px rgba(255,77,109,.7);
+  }
+  .primary:disabled{ opacity:.3; box-shadow:none; cursor:not-allowed; }
+  .primary:active:not(:disabled){ transform:scale(.98); }
+  .link{
+    display:block; width:100%; margin-top:14px; padding:10px;
+    background:none; border:none; color:#6d7387; font-size:13px; cursor:pointer;
+  }
+
+  /* ---------- 滑动页 ---------- */
+  .swipe-top{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:calc(14px + env(safe-area-inset-top)) 22px 4px;
+  }
+  .hud-kept{ font-size:20px; font-weight:800; letter-spacing:.5px; }
+  .hud-kept b{ color:var(--keep); font-size:24px; }
+  .hud-kept span{ color:#8a90a2; }
+  .hud-sub{ font-size:12px; color:#6d7387; margin-top:3px; }
+  .icon{
+    width:42px; height:42px; border-radius:13px; border:1px solid var(--line);
+    background:#191b22; color:#cfd3e0; font-size:19px; cursor:pointer; transition:.15s;
+  }
+  .icon:disabled{ opacity:.3; cursor:not-allowed; }
+  .icon:active:not(:disabled){ transform:scale(.93); }
+
+  .stack{ position:relative; flex:1; min-height:0; overflow:hidden; }
+
+  .card{
+    position:absolute;
+    left:calc(50% - var(--cw)/2);
+    top:calc(50% - var(--ch)/2);
+    width:var(--cw); height:var(--ch);
+    border-radius:22px; background:var(--card-bg); overflow:hidden;
+    box-shadow:0 22px 48px rgba(0,0,0,.55);
+    will-change:transform,opacity;
+    touch-action:none; user-select:none; -webkit-user-select:none;
+    cursor:grab; backface-visibility:hidden;
+  }
+  .card.dragging{ cursor:grabbing; }
+  .card img{
+    width:100%; height:100%; object-fit:contain; display:block;
+    pointer-events:none;
+  }
+  .stamp{
+    position:absolute; font-size:21px; font-weight:800; letter-spacing:5px;
+    padding:8px 16px; border-radius:11px; opacity:0; pointer-events:none;
+    transition:opacity .08s linear; text-indent:5px;
+  }
+  .stamp-discard{
+    top:22px; left:50%; transform:translateX(-50%) rotate(-4deg);
+    color:var(--discard); border:3px solid var(--discard);
+    background:rgba(248,113,113,.14);
+  }
+
+  .swipe-bottom{
+    display:flex; align-items:center; justify-content:center; gap:32px;
+    padding:10px 0 6px;
+  }
+  .act{
+    width:66px; height:66px; border-radius:50%; border:none; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    font-size:26px; transition:transform .13s, background .2s, opacity .2s;
+  }
+  .act:active:not(:disabled){ transform:scale(.9); }
+  .act:disabled{ opacity:.25; cursor:not-allowed; }
+  .act-prev{ background:rgba(255,255,255,.07); color:#cfd3e0; border:1.5px solid rgba(255,255,255,.14); }
+  .act-next{ background:rgba(255,255,255,.07); color:#cfd3e0; border:1.5px solid rgba(255,255,255,.14); }
+  .act-discard{ background:rgba(248,113,113,.13); color:var(--discard);
+                border:1.5px solid rgba(248,113,113,.38); }
+
+  .finish-btn{
+    display:block; margin:0 auto 10px; padding:12px 26px;
+    border:none; border-radius:14px; cursor:pointer;
+    background:linear-gradient(135deg,#34d399,#10b981); color:#fff;
+    font-size:14px; font-weight:700;
+    box-shadow:0 8px 20px -6px rgba(52,211,153,.6);
+  }
+  .finish-btn[hidden]{ display:none; }
+  .finish-btn:active{ transform:scale(.97); }
+
+  .hint{
+    text-align:center; font-size:12px; color:#5b6072;
+    padding-bottom:calc(16px + env(safe-area-inset-bottom));
+  }
+
+  /* ---------- 结果页 ---------- */
+  .result-head{ padding:calc(26px + env(safe-area-inset-top)) 20px 8px; text-align:center; }
+  .result-head h2{ margin:0; font-size:20px; }
+  .result-head h2 span{ color:var(--keep); font-size:24px; }
+  .result-head p{ margin:8px 0 0; font-size:12px; color:#6d7387; }
+  .result-grid{
+    flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    display:grid; grid-template-columns:repeat(3,1fr); gap:6px;
+    padding:14px; align-content:start;
+  }
+  .r-item{
+    position:relative; aspect-ratio:1; border-radius:11px; overflow:hidden;
+    background:#1b1d25; border:1px solid var(--line);
+  }
+  .r-item img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .r-save{
+    position:absolute; right:6px; bottom:6px; width:30px; height:30px; padding:0;
+    border:none; border-radius:50%; background:rgba(0,0,0,.66); color:#fff;
+    font-size:15px; cursor:pointer; backdrop-filter:blur(4px);
+  }
+  .r-save:active{ transform:scale(.9); }
+  .empty{ grid-column:1/-1; text-align:center; color:#6d7387; padding:40px 0; font-size:14px; }
+  .result-actions{
+    display:flex; flex-direction:column; gap:10px;
+    padding:12px 16px calc(18px + env(safe-area-inset-bottom));
+  }
+  .ghost{
+    width:100%; padding:14px; border-radius:14px; cursor:pointer;
+    background:#191b22; color:#cfd3e0; border:1px solid var(--line); font-size:14px;
+  }
+  .ghost:active{ background:#22252f; }
+
+  /* ---------- 弹窗 ---------- */
+  .modal-mask{
+    position:fixed; inset:0; z-index:2000;
+    background:rgba(0,0,0,.62); backdrop-filter:blur(8px);
+    display:flex; align-items:center; justify-content:center;
+    padding:24px;
+    opacity:0; pointer-events:none; transition:opacity .22s;
+  }
+  .modal-mask.show{ opacity:1; pointer-events:auto; }
+  .modal{
+    background:#1b1d25; border:1px solid rgba(255,255,255,.1);
+    border-radius:22px; padding:26px 22px 18px; max-width:360px; width:100%;
+    transform:scale(.92); transition:transform .28s cubic-bezier(.2,.8,.25,1);
+    box-shadow:0 30px 60px rgba(0,0,0,.6);
+  }
+  .modal-mask.show .modal{ transform:scale(1); }
+  .modal h3{ margin:0 0 10px; font-size:18px; }
+  .modal p{ margin:0 0 22px; font-size:14px; color:#9aa0b4; line-height:1.65; }
+  .modal-actions{ display:flex; gap:10px; }
+  .modal-btn{
+    flex:1; padding:13px; border-radius:13px; border:none;
+    font-size:15px; font-weight:600; cursor:pointer; transition:.15s;
+  }
+  .modal-btn.ghost{ background:#232632; color:#cfd3e0; }
+  .modal-btn.primary{ background:linear-gradient(135deg,#ff4d6d,#ff7b54); color:#fff; }
+  .modal-btn:active{ transform:scale(.96); }
+</style>
+</head>
+<body>
+
+<!-- ================= 设置页 ================= -->
+<section id="screen-setup" class="screen active">
+  <div class="wrap">
+    <header class="hero">
+      <h1>照片精选</h1>
+      <p class="sub">批量上传 · 滑动切换 · 上滑丢弃</p>
+    </header>
+
+    <label class="drop" id="drop">
+      <input type="file" id="fileInput" accept="image/*" multiple hidden>
+      <div class="plus">＋</div>
+      <div class="drop-title">点击或拖拽，批量选择照片</div>
+      <div class="drop-hint">可一次多选，也可多次点击追加</div>
+    </label>
+
+    <div class="thumbs" id="thumbs"></div>
+
+    <div class="count-card">
+      <div class="count-label">我最终想保留</div>
+      <div class="count-ctrl">
+        <button class="step" data-step="-1">−</button>
+        <input type="number" id="targetInput" value="9" min="1" inputmode="numeric">
+        <button class="step" data-step="1">＋</button>
+        <span class="unit">张</span>
+      </div>
+      <div class="count-note" id="countNote">还没有选择照片</div>
+    </div>
+
+    <button class="primary" id="startBtn" disabled>开始挑选</button>
+    <button class="link" id="clearBtn">清空照片</button>
+  </div>
+</section>
+
+<!-- ================= 滑动页 ================= -->
+<section id="screen-swipe" class="screen">
+  <div class="swipe-top">
+    <div>
+      <div class="hud-kept"><b id="remainCount">0</b><span> / </span><span id="targetNum">9</span></div>
+      <div class="hud-sub">剩余照片 · 目标保留</div>
+    </div>
+    <button class="icon" id="undoBtn" disabled title="撤销">↶</button>
+  </div>
+
+  <div class="stack" id="stack"></div>
+
+  <div class="swipe-bottom">
+    <button class="act act-prev" id="btnPrev" title="上一张">‹</button>
+    <button class="act act-discard" id="btnDiscard" title="上滑丢弃">↑</button>
+    <button class="act act-next" id="btnNext" title="下一张">›</button>
+  </div>
+  <button class="finish-btn" id="finishBtn" hidden>完成挑选 · 保留剩余照片</button>
+  <div class="hint">左右滑切换 · 上滑丢弃 · 丢弃到目标数量即可完成</div>
+</section>
+
+<!-- ================= 结果页 ================= -->
+<section id="screen-result" class="screen">
+  <div class="result-head">
+    <h2>已选 <span id="rCount">0</span> 张</h2>
+    <p>点击图片右下角 ↓ 可单独保存</p>
+  </div>
+  <div class="result-grid" id="resultGrid"></div>
+  <div class="result-actions">
+    <button class="primary" id="saveAllBtn">一键保存全部</button>
+    <button class="ghost" id="againBtn">再挑一次</button>
+    <button class="ghost" id="newBtn">重新选择照片</button>
+  </div>
+</section>
+
+<!-- ================= 弹窗 ================= -->
+<div class="modal-mask" id="modalMask">
+  <div class="modal">
+    <h3 id="modalTitle">提示</h3>
+    <p id="modalDesc"></p>
+    <div class="modal-actions">
+      <button class="modal-btn ghost" id="modalCancel">取消</button>
+      <button class="modal-btn primary" id="modalOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  const $ = id => document.getElementById(id);
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const TH = 80;
+
+  /* ================= 状态 ================= */
+  const S = {
+    photos: [],
+    target: 9,
+    current: 0,
+    discarded: new Set(),
+    history: [],
+    kept: []
+  };
+
+  let currentCard = null;
+  let drag = null;
+  let busy = false;
+  let finished = false;
+  let askShown = false;
+
+  /* ================= 元素 ================= */
+  const screenSetup  = $('screen-setup');
+  const screenSwipe  = $('screen-swipe');
+  const screenResult = $('screen-result');
+  const stackEl      = $('stack');
+  const fileInput    = $('fileInput');
+  const targetInput  = $('targetInput');
+  const thumbsEl     = $('thumbs');
+  const startBtn     = $('startBtn');
+
+  /* ================= 弹窗 ================= */
+  let modalResolver = null;
+  function ask(title, desc, okText, cancelText){
+    return new Promise(resolve => {
+      $('modalTitle').textContent = title;
+      $('modalDesc').textContent = desc;
+      $('modalOk').textContent = okText || '确定';
+      $('modalCancel').textContent = cancelText || '取消';
+      $('modalMask').classList.add('show');
+      modalResolver = resolve;
+    });
+  }
+  function closeModal(result){
+    $('modalMask').classList.remove('show');
+    if (modalResolver){
+      const r = modalResolver;
+      modalResolver = null;
+      r(result);
+    }
+  }
+  $('modalOk').addEventListener('click', () => closeModal(true));
+  $('modalCancel').addEventListener('click', () => closeModal(false));
+
+  /* ================= 屏幕切换 ================= */
+  function showScreen(el){
+    [screenSetup, screenSwipe, screenResult].forEach(s =>
+      s.classList.toggle('active', s === el));
+  }
+
+  /* ================= 批量上传 ================= */
+  fileInput.addEventListener('change', e => {
+    addFiles(Array.from(e.target.files || []));
+    fileInput.value = '';
+  });
+
+  function addFiles(files){
+    let added = 0;
+    files.forEach(f => {
+      if (!f.type || !f.type.startsWith('image/')) return;
+      S.photos.push({
+        file: f,
+        url: URL.createObjectURL(f),
+        name: f.name || ('photo-' + (S.photos.length + 1) + '.jpg')
+      });
+      added++;
+    });
+    if (added) renderSetup();
+  }
+
+  /* 拖拽上传 */
+  const dropEl = $('drop');
+  ['dragenter','dragover'].forEach(ev => {
+    document.addEventListener(ev, e => {
+      e.preventDefault();
+      dropEl.classList.add('over');
+    });
+  });
+  ['dragleave','drop'].forEach(ev => {
+    document.addEventListener(ev, e => {
+      e.preventDefault();
+      if (ev === 'dragleave' && e.relatedTarget) return;
+      dropEl.classList.remove('over');
+    });
+  });
+  document.addEventListener('drop', e => {
+    e.preventDefault();
+    if (e.dataTransfer && e.dataTransfer.files) addFiles(Array.from(e.dataTransfer.files));
+  });
+
+  /* ================= 设置页渲染 ================= */
+  function renderSetup(){
+    const n = S.photos.length;
+
+    thumbsEl.innerHTML = '';
+    S.photos.forEach((p, i) => {
+      const d = document.createElement('div');
+      d.className = 'thumb';
+      d.style.backgroundImage = `url("${p.url}")`;
+      const x = document.createElement('button');
+      x.className = 'thumb-x';
+      x.textContent = '×';
+      x.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        URL.revokeObjectURL(p.url);
+        S.photos.splice(i, 1);
+        renderSetup();
+      });
+      d.appendChild(x);
+      thumbsEl.appendChild(d);
+    });
+
+    targetInput.max = Math.max(1, n);
+    let t = parseInt(targetInput.value, 10);
+    if (!t || t < 1) t = 1;
+    if (n > 0 && t > n) t = n;
+    if (n === 0 && t !== 1) t = Math.min(t, 99);
+    targetInput.value = t;
+
+    $('countNote').textContent = n
+      ? `已选择 ${n} 张照片`
+      : '还没有选择照片';
+
+    startBtn.disabled = n === 0;
+    startBtn.textContent = n ? `开始挑选（共 ${n} 张）` : '开始挑选';
+  }
+
+  document.querySelectorAll('.step').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const n = Math.max(1, S.photos.length || 99);
+      let v = parseInt(targetInput.value, 10) || 1;
+      v = clamp(v + parseInt(btn.dataset.step, 10), 1, n);
+      targetInput.value = v;
+    });
+  });
+  targetInput.addEventListener('change', () => {
+    const n = Math.max(1, S.photos.length || 99);
+    let v = parseInt(targetInput.value, 10) || 1;
+    targetInput.value = clamp(v, 1, n);
+  });
+
+  $('clearBtn').addEventListener('click', () => {
+    S.photos.forEach(p => URL.revokeObjectURL(p.url));
+    S.photos = [];
+    renderSetup();
+  });
+
+  /* ================= 开始挑选 ================= */
+  startBtn.addEventListener('click', start);
+
+  function start(){
+    if (!S.photos.length) return;
+
+    let t = parseInt(targetInput.value, 10) || 1;
+    t = clamp(t, 1, S.photos.length);
+    S.target = t;
+
+    S.current = 0;
+    S.discarded = new Set();
+    S.history = [];
+    S.kept = [];
+    finished = false;
+    busy = false;
+    askShown = false;
+
+    stackEl.innerHTML = '';
+    if (currentCard){ currentCard.remove(); currentCard = null; }
+
+    // 照片数已经不大于目标 → 全部保留，直接结束
+    if (S.photos.length <= S.target){
+      finish();
+      return;
+    }
+
+    currentCard = makeCard(0);
+    stackEl.appendChild(currentCard);
+    currentCard.style.transition = 'none';
+    currentCard.style.transform = 'scale(.94)';
+    currentCard.style.opacity = '0';
+    void currentCard.offsetWidth;
+    currentCard.style.transition = 'transform .3s cubic-bezier(.2,.8,.25,1), opacity .3s';
+    currentCard.style.transform = 'scale(1)';
+    currentCard.style.opacity = '1';
+
+    $('targetNum').textContent = S.target;
+    updateHud();
+    showScreen(screenSwipe);
+  }
+
+  /* ================= 卡片 ================= */
+  function makeCard(index){
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.innerHTML =
+      `<img src="${S.photos[index].url}" alt="" draggable="false">` +
+      `<div class="stamp stamp-discard">丢弃</div>`;
+    el.dataset.index = index;
+    el.addEventListener('pointerdown', onDown);
+    return el;
+  }
+
+  function getRemaining(){
+    return S.photos.map((_, i) => i).filter(i => !S.discarded.has(i));
+  }
+
+  function getPrevIndex(){
+    const rem = getRemaining();
+    const pos = rem.indexOf(S.current);
+    if (pos <= 0) return null;
+    return rem[pos - 1];
+  }
+
+  function getNextIndex(){
+    const rem = getRemaining();
+    const pos = rem.indexOf(S.current);
+    if (pos === -1 || pos >= rem.length - 1) return null;
+    return rem[pos + 1];
+  }
+
+  /* ================= 拖拽 ================= */
+  function onDown(e){
+    if (busy || finished) return;
+    const card = e.currentTarget;
+    if (card !== currentCard) return;
+
+    e.preventDefault();
+    drag = { card, id: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0 };
+    try { card.setPointerCapture(e.pointerId); } catch(_) {}
+
+    card.classList.add('dragging');
+    card.style.transition = 'none';
+
+    card.addEventListener('pointermove', onMove);
+    card.addEventListener('pointerup', onUp);
+    card.addEventListener('pointercancel', onUp);
+  }
+
+  function onMove(e){
+    if (!drag) return;
+    drag.dx = e.clientX - drag.x0;
+    drag.dy = e.clientY - drag.y0;
+    const { card, dx, dy } = drag;
+
+    const isHorizontal = Math.abs(dx) > Math.abs(dy);
+    const isVerticalUp = dy < 0 && Math.abs(dy) > Math.abs(dx);
+
+    if (isHorizontal){
+      if (dx > 0 && !getPrevIndex()){
+        card.style.transform = `translate3d(${dx * 0.2}px, 0, 0)`;
+      } else if (dx < 0 && !getNextIndex()){
+        card.style.transform = `translate3d(${dx * 0.2}px, 0, 0)`;
+      } else {
+        card.style.transform = `translate3d(${dx}px, ${dy * 0.15}px, 0)`;
+      }
+      card.querySelector('.stamp-discard').style.opacity = 0;
+    } else if (isVerticalUp){
+      const remain = S.photos.length - S.discarded.size;
+      if (remain <= S.target){
+        card.style.transform = `translate3d(0, ${dy * 0.2}px, 0)`;
+        card.querySelector('.stamp-discard').style.opacity = 0;
+      } else {
+        card.style.transform = `translate3d(${dx * 0.15}px, ${dy}px, 0)`;
+        const dp = clamp(-dy / TH, 0, 1);
+        card.querySelector('.stamp-discard').style.opacity = dp;
+      }
+    } else {
+      card.style.transform = `translate3d(${dx * 0.35}px, ${dy * 0.35}px, 0)`;
+      card.querySelector('.stamp-discard').style.opacity = 0;
+    }
+  }
+
+  function onUp(){
+    if (!drag) return;
+    const { card, dx, dy } = drag;
+
+    card.removeEventListener('pointermove', onMove);
+    card.removeEventListener('pointerup', onUp);
+    card.removeEventListener('pointercancel', onUp);
+    card.classList.remove('dragging');
+    drag = null;
+
+    const stamp = card.querySelector('.stamp-discard');
+
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > TH){
+      if (dx > 0 && getPrevIndex()){
+        doSwitch(getPrevIndex(), 1);
+      } else if (dx < 0 && getNextIndex()){
+        doSwitch(getNextIndex(), -1);
+      } else {
+        springBack(card, stamp);
+      }
+    } else if (dy < -TH && (S.photos.length - S.discarded.size) > S.target){
+      discardCurrent();
+    } else {
+      springBack(card, stamp);
+    }
+  }
+
+  function springBack(card, stamp){
+    card.style.transition = 'transform .3s cubic-bezier(.2,.8,.25,1)';
+    card.style.transform = 'translate3d(0,0,0)';
+    if (stamp) stamp.style.opacity = 0;
+  }
+
+  /* ================= 切换照片（左右滑） ================= */
+  function doSwitch(targetIdx, flyDirection){
+    if (busy || finished) return;
+    busy = true;
+
+    const old = currentCard;
+    old.style.transition = 'transform .36s cubic-bezier(.4,0,.6,1), opacity .3s';
+    old.style.transform = `translate3d(${flyDirection * 110}%, 0, 0)`;
+    old.style.opacity = '0';
+
+    const newCard = makeCard(targetIdx);
+    newCard.style.transition = 'none';
+    newCard.style.transform = `translate3d(${-flyDirection * 110}%, 0, 0)`;
+    newCard.style.opacity = '0';
+    stackEl.appendChild(newCard);
+
+    void newCard.offsetWidth;
+
+    newCard.style.transition = 'transform .36s cubic-bezier(.2,.8,.25,1), opacity .3s';
+    newCard.style.transform = 'translate3d(0,0,0)';
+    newCard.style.opacity = '1';
+
+    S.current = targetIdx;
+    currentCard = newCard;
+
+    setTimeout(() => {
+      old.remove();
+      busy = false;
+      updateHud();
+    }, 380);
+  }
+
+  /* ================= 上滑丢弃 ================= */
+  function discardCurrent(){
+    if (busy || finished) return;
+    const remain = S.photos.length - S.discarded.size;
+    if (remain <= S.target) return;
+
+    busy = true;
+    const card = currentCard;
+    const discardedIdx = S.current;
+
+    card.style.transition = 'transform .5s cubic-bezier(.3,.6,.3,1), opacity .45s';
+    card.style.transform = 'translate3d(0, -130%, 0) rotate(-8deg)';
+    card.style.opacity = '0';
+    card.querySelector('.stamp-discard').style.opacity = 1;
+
+    S.history.push({ type: 'discard', index: discardedIdx });
+    S.discarded.add(discardedIdx);
+
+    setTimeout(() => {
+      card.remove();
+
+      const remaining = getRemaining();
+      if (!remaining.length){
+        currentCard = null;
+        busy = false;
+        finish();
+        return;
+      }
+
+      let nextIdx = remaining.find(i => i > discardedIdx);
+      if (nextIdx === undefined) nextIdx = remaining[0];
+      S.current = nextIdx;
+
+      currentCard = makeCard(nextIdx);
+      stackEl.appendChild(currentCard);
+
+      currentCard.style.transition = 'none';
+      currentCard.style.transform = 'scale(.94)';
+      currentCard.style.opacity = '0';
+      void currentCard.offsetWidth;
+      currentCard.style.transition = 'transform .3s cubic-bezier(.2,.8,.25,1), opacity .3s';
+      currentCard.style.transform = 'scale(1)';
+      currentCard.style.opacity = '1';
+
+      busy = false;
+      updateHud();
+      checkFinish();
+    }, 500);
+  }
+
+  /* ================= 撤销 ================= */
+  $('undoBtn').addEventListener('click', () => {
+    if (busy || finished || !S.history.length) return;
+
+    const last = S.history.pop();
+    if (last.type === 'discard'){
+      S.discarded.delete(last.index);
+      S.current = last.index;
+
+      if (currentCard) currentCard.remove();
+      currentCard = makeCard(S.current);
+      stackEl.appendChild(currentCard);
+
+      currentCard.style.transition = 'none';
+      currentCard.style.transform = 'scale(.94)';
+      currentCard.style.opacity = '0';
+      void currentCard.offsetWidth;
+      currentCard.style.transition = 'transform .3s cubic-bezier(.2,.8,.25,1), opacity .3s';
+      currentCard.style.transform = 'scale(1)';
+      currentCard.style.opacity = '1';
+
+      askShown = false;
+      updateHud();
+    }
+  });
+
+  /* ================= 完成 / 弹窗 ================= */
+  async function checkFinish(){
+    if (finished) return;
+    const remain = S.photos.length - S.discarded.size;
+    if (remain === S.target && !askShown){
+      askShown = true;
+      busy = true;
+      updateHud();
+
+      const ok = await ask(
+        '完成挑选',
+        `已丢弃 ${S.discarded.size} 张，剩余 ${S.target} 张照片。是否结束并保存这 ${S.target} 张？`,
+        '结束并保存',
+        '再看看'
+      );
+
+      busy = false;
+      askShown = false;
+
+      if (ok){
+        finish();
+      } else {
+        updateHud();
+      }
+    }
+  }
+
+  $('finishBtn').addEventListener('click', () => {
+    if (finished) return;
+    finish();
+  });
+
+  function finish(){
+    if (finished) return;
+    finished = true;
+    busy = false;
+
+    S.kept = getRemaining().map(i => S.photos[i]);
+
+    renderResult();
+    showScreen(screenResult);
+  }
+
+  /* ================= HUD ================= */
+  function updateHud(){
+    const remain = S.photos.length - S.discarded.size;
+
+    $('remainCount').textContent = remain;
+    $('targetNum').textContent = S.target;
+    $('undoBtn').disabled = S.history.length === 0 || busy || finished;
+
+    $('btnDiscard').disabled = !(remain > S.target) || busy || finished;
+    $('btnPrev').disabled = !getPrevIndex() || busy || finished;
+    $('btnNext').disabled = !getNextIndex() || busy || finished;
+
+    $('finishBtn').hidden = !(remain === S.target && !finished);
+  }
+
+  /* ================= 按钮 / 键盘 ================= */
+  $('btnPrev').addEventListener('click', () => {
+    if ($('btnPrev').disabled) return;
+    doSwitch(getPrevIndex(), 1);
+  });
+  $('btnNext').addEventListener('click', () => {
+    if ($('btnNext').disabled) return;
+    doSwitch(getNextIndex(), -1);
+  });
+  $('btnDiscard').addEventListener('click', () => {
+    if ($('btnDiscard').disabled) return;
+    discardCurrent();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (!screenSwipe.classList.contains('active')) return;
+    if (e.key === 'ArrowRight' && !$('btnPrev').disabled){
+      doSwitch(getPrevIndex(), 1);
+    } else if (e.key === 'ArrowLeft' && !$('btnNext').disabled){
+      doSwitch(getNextIndex(), -1);
+    } else if (e.key === 'ArrowUp' && !$('btnDiscard').disabled){
+      discardCurrent();
+    }
+  });
+
+  /* ================= 结果页 ================= */
+  function renderResult(){
+    const grid = $('resultGrid');
+    $('rCount').textContent = S.kept.length;
+    grid.innerHTML = '';
+
+    if (!S.kept.length){
+      grid.innerHTML = '<div class="empty">没有保留任何照片</div>';
+      $('saveAllBtn').disabled = true;
+      return;
+    }
+    $('saveAllBtn').disabled = false;
+    $('saveAllBtn').textContent = `一键保存全部（${S.kept.length} 张）`;
+
+    S.kept.forEach((p, i) => {
+      const d = document.createElement('div');
+      d.className = 'r-item';
+      const img = document.createElement('img');
+      img.src = p.url;
+      img.alt = '';
+      const btn = document.createElement('button');
+      btn.className = 'r-save';
+      btn.textContent = '↓';
+      btn.addEventListener('click', () => saveOne(p, i));
+      d.appendChild(img);
+      d.appendChild(btn);
+      grid.appendChild(d);
+    });
+  }
+
+  function downloadName(p, i){
+    const m = p.name.match(/\.([a-zA-Z0-9]+)$/);
+    const ext = m ? m[1].toLowerCase() : 'jpg';
+    let base = p.name.replace(/\.[^.]+$/, '') || 'photo';
+    base = base.replace(/[\\/:*?"<>|]/g, '_');
+    return `${String(i + 1).padStart(2, '0')}_${base}.${ext}`;
+  }
+
+  function saveOne(p, i){
+    const a = document.createElement('a');
+    a.href = p.url;
+    a.download = downloadName(p, i);
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => a.remove(), 0);
+  }
+
+  $('saveAllBtn').addEventListener('click', async () => {
+    const btn = $('saveAllBtn');
+    if (!S.kept.length) return;
+    btn.disabled = true;
+    const total = S.kept.length;
+
+    for (let i = 0; i < total; i++){
+      btn.textContent = `正在保存 ${i + 1} / ${total} …`;
+      saveOne(S.kept[i], i);
+      await sleep(340);
+    }
+
+    btn.textContent = '已发起保存 ✓';
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = `一键保存全部（${total} 张）`;
+    }, 1800);
+  });
+
+  $('againBtn').addEventListener('click', () => {
+    start();
+  });
+
+  $('newBtn').addEventListener('click', () => {
+    S.photos.forEach(p => URL.revokeObjectURL(p.url));
+    S.photos = [];
+    S.kept = [];
+    S.discarded = new Set();
+    S.history = [];
+    finished = false;
+    busy = false;
+    askShown = false;
+    renderSetup();
+    showScreen(screenSetup);
+  });
+
+  /* ================= 初始化 ================= */
+  renderSetup();
+
+  document.addEventListener('touchmove', e => {
+    if (screenSwipe.classList.contains('active') && drag) e.preventDefault();
+  }, { passive: false });
+
+})();
+</script>
+</body>
+</html>
